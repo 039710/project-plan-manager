@@ -111,6 +111,7 @@ For planning, executing/resuming plans, or auditing plans before execution, load
 Run the CLI from a project root, or pass `--project <path>` to target another project. With no arguments it prints its usage block and exits non-zero.
 
 ```sh
+plan-task -h | --help                                   # full usage, exit 0
 plan-task init [--plan <name>] [--project <path>]
 plan-task plan_init --plan <name> [--project <path>]     # alias for init --plan
 plan-task migrate [--project <path>] [--dry-run]
@@ -130,6 +131,24 @@ Task status values are `todo`, `completed`, and `fail`. Progress text is free-fo
 
 `--dry-run` is supported by `migrate` and `clean_roots` only. Successive runs are safe: `init` re-registers the project root, and `task_*` commands are idempotent for the same target status.
 
+With no arguments at all, `plan-task` prints the same usage block and exits non-zero.
+
+### Try it in a minute
+
+`examples/demo-plan/` is a ready-made plan, so you can see the layout and the CLI round trip before authoring anything. From a project root:
+
+```sh
+plan-task init --plan demo
+cp -R ~/.project-plan-manager/examples/demo-plan/plan.md .ppm/demo/plan.md
+cp ~/.project-plan-manager/examples/demo-plan/tasks/*.json .ppm/demo/tasks/
+plan-task task_list --plan demo --phase phase_0
+plan-task dashboard_serve           # http://127.0.0.1:4173/task.html
+```
+
+Adjust the `cp` source if you cloned the package somewhere else. Remove `.ppm/demo/` when done.
+
+Phase files are hand-authored (or written by the skill's agent) — there is deliberately no `task_add` command, because a task's `detail` is the contract another agent executes, and that is worth writing in full. Copy the example file as your starting point.
+
 ## Dashboard
 
 ```sh
@@ -147,6 +166,7 @@ plan-task dashboard_serve [--port 4173]
 | What | Where |
 | --- | --- |
 | Project plans and task data | `<project>/.ppm/` |
+| Example plan | `<package>/examples/demo-plan/` |
 | Registered project roots | `~/.config/project-plan-manager/config.json` (`0700` dir, `0600` file) |
 | Dashboard template | `~/.config/opencode/skills/project-plan-manager/templates/task.html` |
 | CLI implementation | `~/.local/lib/opencode/plan-task.js` |
@@ -167,12 +187,12 @@ From this directory:
 ```sh
 sh -n install.sh                                    # installer syntax
 node --check cli/plan-task.js                       # CLI syntax
-node skill/scripts/smoke-test-task-html.js          # dashboard render checks
+node skill/scripts/smoke-test-task-html.js          # dashboard render + example contract
 plan-task                                           # prints usage, exits non-zero
 cd "$(mktemp -d)" && HOME="$PWD/home" sh "$OLDPWD/install.sh" --dry-run
 ```
 
-The smoke test extracts the dashboard script, runs it against a stub DOM, and asserts forced-open behaviour, persisted accordion state, copy prompts, phase labels, theme, and column settings. Run it after any edit to `skill/templates/task.html`.
+The smoke test extracts the dashboard script, runs it against a stub DOM, and asserts forced-open behaviour, persisted accordion state, copy prompts, phase labels, theme, and column settings. When run from the package it also validates `examples/demo-plan` against the phase JSON contract. Run it after any edit to `skill/templates/task.html` or the example plan.
 
 ## Differences from the upstream reference
 

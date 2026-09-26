@@ -30,6 +30,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 function usage() {
 	return [
 		"Usage:",
+		"  plan-task -h | --help",
 		"  plan-task init [--plan <name>] [--project <path>]",
 		"  plan-task migrate [--project <path>] [--dry-run]",
 		"  plan-task clean_roots [--dry-run]",
@@ -43,6 +44,7 @@ function usage() {
 		"  plan-task task_write_progress --plan <name> --phase <phase_x> --task-id <id> --progress-text <text> [--project <path>]",
 		"",
 		"Compatibility: plan_init remains an alias for init --plan.",
+		"Quick start: copy examples/demo-plan into <project>/.ppm/demo.",
 	].join("\n");
 }
 
@@ -345,6 +347,10 @@ function printFields(fields) {
 }
 
 function run(argv) {
+	if (argv[0] === "-h" || argv[0] === "--help" || argv[0] === "help") {
+		process.stdout.write(`${usage()}\n`);
+		return;
+	}
 	const { operation, options } = parseArgs(argv);
 	if (operation === "init" || operation === "plan_init") return initialize(options);
 	if (operation === "migrate") return migrateLegacy(options);

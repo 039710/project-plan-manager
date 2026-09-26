@@ -51,6 +51,32 @@ const searched = document.querySelector("#content").innerHTML;
 checks.push(["search auto-opens match", searched.includes('data-key="p1/alpha/phase_0/TASK-001" data-forced="1" open')]);
 checks.push(["search hides non-match", !searched.includes("TASK-003")]);
 
+// Example plan contract checks. Skipped when running from an installed skill
+// copy, which carries skill/ only and has no examples/ directory.
+const examplesDir = path.join(__dirname, "..", "..", "examples", "demo-plan");
+if (fs.existsSync(examplesDir)) {
+  const tasksDir = path.join(examplesDir, "tasks");
+  const phaseFiles = fs.existsSync(tasksDir) ? fs.readdirSync(tasksDir).filter(name => name.endsWith(".json")) : [];
+  checks.push(["example plan.md present", fs.existsSync(path.join(examplesDir, "plan.md"))]);
+  checks.push(["example has >=2 phases", phaseFiles.length >= 2]);
+  let contractOk = phaseFiles.length > 0;
+  for (const name of phaseFiles) {
+    const data = JSON.parse(fs.readFileSync(path.join(tasksDir, name), "utf8"));
+    if (data.phase !== name.replace(/\.json$/, "")) contractOk = false;
+    if (!Array.isArray(data.tasks) || data.tasks.length === 0) contractOk = false;
+    const ids = new Set();
+    for (const task of data.tasks || []) {
+      if (typeof task.id !== "string" || ids.has(task.id)) contractOk = false;
+      ids.add(task.id);
+      if (typeof task.title !== "string" || typeof task.detail !== "string" || typeof task.progress !== "string") contractOk = false;
+      if (!["todo", "completed", "fail"].includes(task.status)) contractOk = false;
+    }
+  }
+  checks.push(["example phase contract", contractOk]);
+} else {
+  console.log("note: examples/ absent (installed copy) — example checks skipped");
+}
+
 let failed = 0;
 for (const [name, ok] of checks) { if (!ok) { console.log("FAIL " + name); failed++; } }
 console.log(failed ? `${failed}/${checks.length} FAILED` : `ALL PASS ${checks.length}`);

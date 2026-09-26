@@ -1,0 +1,13 @@
+{
+  "phase": "phase_1",
+  "title": "Ship",
+  "tasks": [
+    {
+      "id": "TASK-101",
+      "title": "Record progress through the CLI, not by hand",
+      "detail": "Use plan-task task_write_progress --progress-text \"...\" to record what was done and how it was verified, then plan-task task_completed. Confirm with plan-task task_get_progress.",
+      "status": "todo",
+      "progress": ""
+    }
+  ]
+}

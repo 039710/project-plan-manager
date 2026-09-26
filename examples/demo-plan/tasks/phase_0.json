@@ -1,0 +1,20 @@
+{
+  "phase": "phase_0",
+  "title": "Prepare",
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "title": "Confirm the example plan shows up",
+      "detail": "Run plan-task task_list --plan demo --phase phase_0 and check this task is listed as completed. Verify the dashboard too: plan-task dashboard_serve, then open http://127.0.0.1:4173/task.html.",
+      "status": "completed",
+      "progress": "Read straight from the example file; nothing had to be edited."
+    },
+    {
+      "id": "TASK-002",
+      "title": "Replace the example tasks with your own",
+      "detail": "Edit .ppm/demo/tasks/phase_0.json. Keep ids unique inside the phase, keep the phase field equal to the file name, and use only todo, completed, or fail as status. A task detail must state intent and acceptance criteria, not a script.",
+      "status": "todo",
+      "progress": ""
+    }
+  ]
+}
