@@ -4,6 +4,8 @@ Local package for the `project-plan-manager` agent skill: structured project pla
 
 This directory is the source of truth. `install.sh` distributes it to the skill directories the agent clients read, and to the CLI location the `plan-task` shim calls.
 
+Clone it anywhere you like; `~/.project-plan-manager` is the recommended location, and the paths in this README assume it. The installer always works from its own directory, so any clone location is fine.
+
 ## Origin and attribution
 
 Inspired by [alfahluzi/project-plan-manager](https://github.com/alfahluzi/project-plan-manager), an MIT-licensed project that defines the canonical `project-plan-manager` skill layout: a lowercase hyphenated skill folder with a routing `SKILL.md` and tiered flow prompt files.
@@ -62,6 +64,7 @@ So `install.sh` installs that target unconditionally, even when you only ask for
 ## Installation
 
 ```sh
+git clone https://github.com/039710/project-plan-manager.git ~/.project-plan-manager
 cd ~/.project-plan-manager
 ./install.sh --dry-run                 # show every path that would change
 ./install.sh                           # copy mode: pi + opencode (+ CLI)
@@ -71,6 +74,8 @@ cd ~/.project-plan-manager
 ./install.sh --mode link               # symlink skill dirs at skill/ (live development)
 ./install.sh --uninstall               # move installed skill dirs aside, remove CLI
 ```
+
+The clone target is a convenience, not a requirement: run `install.sh` from wherever the repository landed and it installs from that tree.
 
 Supported `--client` values: `pi`, `opencode`, `claude`, `codex`, `agents`, `all`.
 
@@ -164,7 +169,7 @@ sh -n install.sh                                    # installer syntax
 node --check cli/plan-task.js                       # CLI syntax
 node skill/scripts/smoke-test-task-html.js          # dashboard render checks
 plan-task                                           # prints usage, exits non-zero
-cd "$(mktemp -d)" && HOME="$PWD/home" sh ~/.project-plan-manager/install.sh --dry-run
+cd "$(mktemp -d)" && HOME="$PWD/home" sh "$OLDPWD/install.sh" --dry-run
 ```
 
 The smoke test extracts the dashboard script, runs it against a stub DOM, and asserts forced-open behaviour, persisted accordion state, copy prompts, phase labels, theme, and column settings. Run it after any edit to `skill/templates/task.html`.
