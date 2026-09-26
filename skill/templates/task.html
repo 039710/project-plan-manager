@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Project Plan Manager</title>
+  <link rel="icon" href="data:,">
+  <style>
+    /* Design tokens: engineering worksheet. Serif only for document titles,
+       mono only for identifiers and logs, status color carries meaning. */
+    :root {
+      color-scheme: light;
+      --paper: #ECEEEA;
+      --sheet: #FFFFFF;
+      --ink: #1C1F1D;
+      --ink-soft: #5A615C;
+      --rule: #C9CFC8;
+      --rule-soft: #DDE1DB;
+      --focus: #0B4FA8;
+      --todo: #8A5A00;
+      --todo-fill: #E5C368;
+      --done: #1E7A46;
+      --fail: #B3261E;
+      --radius: 3px;
+    }
+    * { box-sizing: border-box }
+    body {
+      margin: 0;
+      padding: 0 0 64px;
+      font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 1400px; margin-inline: auto; padding-inline: clamp(18px, 3vw, 34px) }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: var(--paper);
+      border-bottom: 1px solid var(--rule);
+    }
+    .header-inner {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      padding-block: 14px 12px;
+    }
+    h1 {
+      margin: 0 auto 0 0;
+      font: 600 1.25rem/1.15 Georgia, "Iowan Old Style", "Times New Roman", serif;
+      letter-spacing: -.005em;
+      color: var(--ink);
+    }
+    select, input, button {
+      color: var(--ink);
+      font: inherit;
+      font-size: .86rem;
+      height: 34px;
+      background: var(--sheet);
+      border: 1px solid var(--rule);
+      border-radius: var(--radius);
+      padding: 0 10px;
+    }
+    select:hover, input:hover, button:hover { border-color: var(--ink-soft) }
+    input::placeholder { color: var(--ink-soft) }
+    button { cursor: pointer }
+    #project { flex: 0 1 auto; max-width: 340px }
+    #plan-filter { flex: 0 0 auto }
+    #search { flex: 1 1 160px; min-width: 140px; max-width: 280px }
+    #refresh { flex: 0 0 auto }
+    button:hover { background: var(--ink); color: var(--paper); border-color: var(--ink) }
+    button:active { transform: translateY(1px) }
+    :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px }
+
+    #content { display: grid; gap: 10px; align-content: start; margin-block-start: 20px }
+    #content.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+    #content.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --paper: #161815;
+      --sheet: #1D201D;
+      --ink: #E4E7E2;
+      --ink-soft: #98A099;
+      --rule: #39403A;
+      --rule-soft: #2A2F2B;
+      --focus: #8AB4FF;
+      --todo: #E3C06B;
+      --todo-fill: #7A5C16;
+      --done: #63C88F;
+      --fail: #EF8B80;
+    }
+    .empty { color: var(--ink-soft); padding: 28px 0; max-width: 46ch }
+    .empty code { font-family: ui-monospace, monospace; font-size: .85rem }
+    .error { color: var(--fail) }
+
+    details.plan {
+      background: var(--sheet);
+      border: 1px solid var(--rule);
+      border-left: 3px solid var(--rule);
+      border-radius: var(--radius);
+    }
+    details.plan.zero { border-left-color: var(--todo-fill) }
+    details.plan.partial { border-left-color: var(--todo) }
+    details.plan.complete { border-left-color: var(--done) }
+    details.plan > summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      align-items: baseline;
+      padding: 14px 16px;
+      cursor: pointer;
+      list-style: none;
+    }
+    details.plan > summary::-webkit-details-marker { display: none }
+    details.plan > summary::before {
+      content: "";
+      align-self: center;
+      width: 7px; height: 7px;
+      border-right: 1.5px solid var(--ink-soft);
+      border-bottom: 1.5px solid var(--ink-soft);
+      transform: rotate(-45deg);
+      transition: transform .15s ease;
+    }
+    details.plan[open] > summary::before { transform: rotate(45deg) }
+    details.plan > summary:hover { background: var(--rule-soft) }
+    .plan-body { padding: 2px 16px 16px 34px; border-top: 1px solid var(--rule-soft) }
+    .plan-title {
+      font: 600 1.08rem/1.25 Georgia, "Iowan Old Style", "Times New Roman", serif;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .plan-count { color: var(--ink-soft); font-size: .82rem; white-space: nowrap }
+    .plan-count b { color: var(--ink); font-weight: 600 }
+
+    .phase-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+      align-self: center;
+      margin-left: auto;
+      max-width: 100%;
+    }
+    .segp {
+      width: 15px; height: 9px;
+      border: 1px solid var(--rule);
+      border-radius: 2px;
+      background: var(--sheet);
+    }
+    .segp.zero { background: var(--rule-soft) }
+    .segp.partial { background: var(--todo-fill); border-color: var(--todo) }
+    .segp.complete { background: var(--done); border-color: var(--done) }
+    .segp.fail { background: var(--fail); border-color: var(--fail) }
+
+    .phases { display: grid; grid-template-columns: 1fr; gap: 14px; margin-top: 12px }
+    .phase { border-left: 2px solid var(--rule); padding: 2px 0 0 14px }
+    .phase-head {
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+    .phase-head strong { min-width: 0; font-size: .95rem }
+    .phase-count { color: var(--ink-soft); font-size: .8rem; white-space: nowrap }
+
+    .actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 10px 0 0 }
+    .actions button {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 9px;
+      font-size: .78rem;
+      background: var(--sheet);
+    }
+    .ico {
+      width: 12px; height: 12px; flex: 0 0 auto;
+      fill: none; stroke: currentColor; stroke-width: 2.2;
+      stroke-linecap: round; stroke-linejoin: round;
+    }
+    .actions button.open-plan { font-weight: 600 }
+    .task-actions { margin-top: 10px }
+    .task-actions button { opacity: .6; transition: opacity .15s ease }
+    .task:hover .task-actions button,
+    .task:focus-within .task-actions button { opacity: 1 }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+    }
+    @media (hover: none) { .task-actions button { opacity: 1 } }
+
+    .task {
+      border-top: 1px solid var(--rule-soft);
+      margin: 0;
+      padding: 9px 0 2px;
+      background: none;
+    }
+    .task:first-of-type { border-top: 0 }
+    .task summary {
+      display: flex;
+      gap: 9px;
+      align-items: baseline;
+      justify-content: space-between;
+      cursor: pointer;
+      font-size: .88rem;
+      list-style: none;
+    }
+    .task summary::-webkit-details-marker { display: none }
+    .task summary > span:first-child { min-width: 0; overflow-wrap: anywhere }
+    .glyph {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border: 1.5px solid var(--ink-soft);
+      border-radius: 2px;
+      margin-right: 7px;
+      vertical-align: baseline;
+    }
+    .task.completed .glyph { background: var(--done); border-color: var(--done) }
+    .task.fail .glyph { background: var(--fail); border-color: var(--fail) }
+    .task.todo .glyph { border-color: var(--todo); border-style: dashed }
+    .task-id { color: var(--ink-soft); font-family: ui-monospace, monospace; font-size: .76rem; margin-right: 6px }
+    .task-status { flex: 0 0 auto; font-size: .78rem; color: var(--ink-soft) }
+    .task.todo .task-status { color: var(--todo) }
+    .task.completed .task-status { color: var(--done) }
+    .task.fail .task-status { color: var(--fail); font-weight: 600 }
+    .task-body { padding: 8px 0 10px 26px }
+    .task-section { margin-top: 10px }
+    .task-section:first-child { margin-top: 0 }
+    .task-label { color: var(--ink-soft); font-size: .78rem }
+    .task-text { font-size: .84rem; line-height: 1.55; margin: 3px 0 0; color: var(--ink) }
+    .progress {
+      white-space: pre-wrap;
+      font-family: ui-monospace, monospace;
+      font-size: .76rem;
+      background: var(--paper);
+      border: 1px solid var(--rule-soft);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+    }
+    .muted { color: var(--ink-soft); font-size: .8rem }
+
+    dialog {
+      width: min(900px, 92vw);
+      max-height: 88vh;
+      color: inherit;
+      background: var(--sheet);
+      border: 1px solid var(--rule);
+      border-radius: var(--radius);
+      padding: 0;
+    }
+    dialog::backdrop { background: rgba(28, 31, 29, .35) }
+    .modal-header {
+      position: sticky;
+      top: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--sheet);
+      border-bottom: 1px solid var(--rule);
+    }
+    .modal-header strong {
+      margin-right: auto;
+      font: 600 1rem Georgia, "Iowan Old Style", serif;
+    }
+    .modal-content {
+      margin: 0;
+      padding: 16px;
+      overflow: auto;
+      white-space: pre-wrap;
+      font: 12px/1.6 ui-monospace, monospace;
+      color: var(--ink);
+    }
+
+    .gate { display: none }
+
+    @media (max-width: 1100px) { #content.cols-3 { grid-template-columns: 1fr } }
+    @media (max-width: 900px) { #content.cols-2 { grid-template-columns: 1fr } }
+    @media (max-width: 720px) {
+      body { padding-bottom: 48px }
+      h1 { flex: 1 1 100% }
+      input { min-width: 0 }
+      header select, header button { flex: 1 1 auto }
+      #content { margin-block-start: 14px }
+      details.plan > summary { padding: 12px 12px 12px 10px }
+      .plan-body { padding: 2px 12px 12px 26px }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important }
+      button:active { transform: none }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap header-inner">
+      <h1>Project Plan Manager</h1>
+      <select id="project"></select>
+      <select id="plan-filter">
+        <option value="all">All plans</option>
+        <option value="zero">0%</option>
+        <option value="partial">1-99%</option>
+        <option value="complete">100%</option>
+      </select>
+      <input id="search" placeholder="Search tasks">
+      <button id="refresh">Refresh</button>
+      <select id="cols" aria-label="Plan columns">
+        <option value="1">1 column</option>
+        <option value="2">2 columns</option>
+        <option value="3">3 columns</option>
+      </select>
+      <select id="theme" aria-label="Theme">
+        <option value="auto">Theme: auto</option>
+        <option value="light">Theme: light</option>
+        <option value="dark">Theme: dark</option>
+      </select>
+    </div>
+  </header>
+  <main id="content" class="wrap">Loading...</main>
+  <div id="live" class="sr-only" role="status" aria-live="polite"></div>
+  <div id="live" class="sr-only" role="status" aria-live="polite"></div>
+  <dialog id="plan-modal">
+    <div class="modal-header"><strong id="modal-title"></strong><button id="modal-close">Close</button></div>
+    <pre id="modal-content" class="modal-content"></pre>
+  </dialog>
+  <script>
+    const OPEN_KEY = "ppm-open";
+    const COLS_KEY = "ppm-cols";
+    const THEME_KEY = "ppm-theme";
+    const loadCols = () => { try { const v = localStorage.getItem(COLS_KEY); return ["1", "2", "3"].includes(v) ? v : "1"; } catch { return "1"; } };
+    const loadTheme = () => { try { const v = localStorage.getItem(THEME_KEY); return ["auto", "light", "dark"].includes(v) ? v : "auto"; } catch { return "auto"; } };
+    const loadOpen = () => { try { return new Map(Object.entries(JSON.parse(localStorage.getItem(OPEN_KEY) || "{}")).filter(entry => entry[1])); } catch { return new Map(); } };
+    const saveOpen = () => { try { localStorage.setItem(OPEN_KEY, JSON.stringify(Object.fromEntries(state.open))); } catch {} };
+    const state = { data:null, project:"", query:"", filter:"all", cols:loadCols(), theme:loadTheme(), open:loadOpen() };
+    const live = text => { const node = document.querySelector("#live"); if (node) node.textContent = text; };
+    const ICON_COPY = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>';
+    const ICON_CHECK = '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+    let poller = null;
+    function startPolling() {
+      if (poller !== null) return;
+      load();
+      poller = setInterval(load, 3000);
+    }
+    const esc = value => String(value ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]);
+    const openAttr = (key, force) => (state.open.get(key) || force) ? " open" : "";
+    const forcedAttr = (key, force) => (force && !state.open.get(key)) ? ' data-forced="1"' : "";
+    const stats = phases => {
+      const tasks = phases.flatMap(phase => phase.tasks);
+      const completed = tasks.filter(task => task.status === "completed").length;
+      return { completed, total:tasks.length, percent:tasks.length ? Math.round(completed * 100 / tasks.length) : 0 };
+    };
+    const completionClass = value => value === 100 ? "complete" : value === 0 ? "zero" : "partial";
+    const hasFail = phases => phases.some(phase => phase.tasks.some(task => task.status === "fail"));
+    const statusLabel = status => ({ todo: "To do", completed: "Done", fail: "Failed" })[status] || status;
+    const phaseLabel = name => String(name ?? "").replace(/_/g, "-");
+    const actionButton = (label, prompt, variant = "copy-prompt") => `<button class="${variant}" data-prompt="${esc(prompt)}" data-label="${esc(label)}" aria-label="${esc(label)}">${ICON_COPY}<span>${esc(label)}</span></button>`;
+    const taskActions = (planName, phaseName, task) => {
+      const exec = `Execute ${task.id} (${task.title}) in ${planName}/${phaseName} using Project-Plan-Manager skill`;
+      const cli = `plan-task task_get_detail --plan ${planName} --phase ${phaseName} --task-id ${task.id}`;
+      const body = `[${task.id}] ${task.title}\nStatus: ${task.status}\n\nDetail:\n${task.detail}\n\nProgress:\n${task.progress || "No progress recorded."}`;
+      return `<div class="actions task-actions">${actionButton("Execute Task", exec)}${actionButton("Copy CLI", cli, "copy-prompt cli")}${actionButton("Copy Detail", body)}</div>`;
+    };
+    const openPlanButton = plan => `<button class="open-plan" data-plan="${esc(plan.name)}">Open Plan</button>`;
+    function applyTheme() {
+      const resolved = state.theme === "auto"
+        ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+        : state.theme;
+      document.documentElement.dataset.theme = resolved;
+    }
+    function applyCols() {
+      const content = document.querySelector("#content");
+      content.className = "wrap" + (state.cols === "1" ? "" : ` cols-${state.cols}`);
+      document.querySelector("#cols").value = state.cols;
+    }
+    function render() {
+      const projects = state.data?.projects || [];
+      const select = document.querySelector("#project");
+      const previous = state.project || select.value;
+      select.innerHTML = projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)} - ${esc(p.path)}</option>`).join("");
+      state.project = projects.some(p => p.id === previous) ? previous : (projects[0]?.id || "");
+      select.value = state.project;
+      const project = projects.find(p => p.id === state.project);
+      if (!project) { document.querySelector("#content").innerHTML = '<p class="empty">No registered projects yet. Run <code>plan-task init</code> inside your project, then reload this page.</p>'; return; }
+      const query = state.query.toLowerCase();
+      const plans = project.plans.filter(plan => {
+        if (state.filter === "all") return true;
+        return completionClass(stats(plan.phases).percent) === state.filter;
+      }).map(plan => {
+        const phases = plan.phases.map(phase => {
+          const tasks = phase.tasks.filter(t => !query || [t.id,t.title,t.detail,t.progress,t.status].some(v => String(v || "").toLowerCase().includes(query)));
+          if (query && !tasks.length) return "";
+          const phaseStats = stats([phase]);
+          const executePhase = `Execute ${plan.name} only Phase ${phase.name} using Project-Plan-Manager skill. Check blocking previous phase, report if any`;
+          const auditPhase = `Audit ${plan.name} only Phase ${phase.name} using Project-Plan-Manager skill. Report briefly`;
+          return `<section class="phase"><div class="phase-head"><strong>${esc(phase.title)}</strong><span class="phase-count">${esc(phaseLabel(phase.name))}: ${phaseStats.completed} of ${phaseStats.total} done</span></div><div class="actions">${actionButton("Execute Phase", executePhase)}${actionButton("Audit Phase", auditPhase)}</div>${tasks.map(t => { const taskKey = `${project.id}/${plan.name}/${phase.name}/${t.id}`; const force = !!query || t.status === "fail"; return `<details class="task ${esc(t.status)}" data-key="${esc(taskKey)}"${forcedAttr(taskKey, force)}${openAttr(taskKey, force)}><summary><span><span class="glyph" aria-hidden="true"></span><span class="task-id">${esc(t.id)}</span>${esc(t.title)}</span><span class="task-status">${esc(statusLabel(t.status))}</span></summary><div class="task-body"><section class="task-section"><div class="task-label">Detail</div><p class="task-text">${esc(t.detail)}</p></section><section class="task-section"><div class="task-label">Progress</div><div class="task-text progress">${esc(t.progress || "No progress recorded.")}</div></section>${taskActions(plan.name, phase.name, t)}</div></details>`; }).join("")}</section>`;
+        }).join("");
+        if (query && !phases) return "";
+        const planKey = `${project.id}/${plan.name}`;
+        const planStats = stats(plan.phases);
+        const tone = completionClass(planStats.percent);
+        const executePlan = `Execute ${plan.name} using Project-Plan-Manager skill`;
+        const auditPlan = `Audit ${plan.name} using Project-Plan-Manager skill`;
+        const forcePlan = !!query || hasFail(plan.phases);
+        const strip = plan.phases.map(phase => {
+          const st = stats([phase]);
+          const segTone = hasFail([phase]) ? "fail" : completionClass(st.percent);
+          return `<span class="segp ${segTone}" title="${esc(phaseLabel(phase.name))}: ${st.completed} of ${st.total} done"></span>`;
+        }).join("");
+        return `<details class="plan ${tone}" data-key="${esc(planKey)}"${forcedAttr(planKey, forcePlan)}${openAttr(planKey, forcePlan)}><summary><span class="plan-title">${esc(plan.name)}</span><span class="plan-count"><b>${planStats.completed}</b> of ${planStats.total} done, ${planStats.percent}%</span><span class="phase-strip" aria-hidden="true">${strip}</span></summary><div class="plan-body"><div class="actions">${actionButton("Execute Plan", executePlan)}${actionButton("Audit Plan", auditPlan)}${openPlanButton(plan)}</div><div class="phases">${phases || '<span class="muted">No phases in this plan yet.</span>'}</div></div></details>`;
+      }).join("");
+      document.querySelector("#content").innerHTML = plans || '<p class="empty">No plans match. Clear the search or filter to see all plans.</p>';
+    }
+    let lastPayload = "";
+    async function load() {
+      try {
+        const response = await fetch("/api/tasks", { cache:"no-store" });
+        if (!response.ok) throw new Error(await response.text());
+        const payload = await response.text();
+        if (payload === lastPayload) return;
+        lastPayload = payload;
+        state.data = JSON.parse(payload);
+        render();
+      } catch (error) { document.querySelector("#content").innerHTML = `<p class="error">${esc(error.message)}</p>`; }
+    }
+    document.querySelector("#project").addEventListener("change", event => { state.project = event.target.value; render(); });
+    document.querySelector("#plan-filter").addEventListener("change", event => { state.filter = event.target.value; render(); });
+    document.querySelector("#search").addEventListener("input", event => { state.query = event.target.value; render(); });
+    document.querySelector("#refresh").addEventListener("click", load);
+    document.querySelector("#cols").addEventListener("change", event => {
+      state.cols = event.target.value;
+      try { localStorage.setItem(COLS_KEY, state.cols); } catch {}
+      applyCols();
+    });
+    document.querySelector("#theme").addEventListener("change", event => {
+      state.theme = event.target.value;
+      try { localStorage.setItem(THEME_KEY, state.theme); } catch {}
+      applyTheme();
+    });
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (state.theme === "auto") applyTheme(); });
+    document.querySelector("#content").addEventListener("click", async event => {
+      const openButton = event.target.closest(".open-plan");
+      if (openButton) {
+        const project = state.data.projects.find(item => item.id === state.project);
+        const plan = project?.plans.find(item => item.name === openButton.dataset.plan);
+        document.querySelector("#modal-title").textContent = `${plan?.name || "Plan"} - plan.md`;
+        document.querySelector("#modal-content").textContent = plan?.content || "plan.md not found or empty.";
+        document.querySelector("#plan-modal").showModal();
+        return;
+      }
+      const button = event.target.closest(".copy-prompt");
+      if (!button) return;
+      const restore = button.innerHTML;
+      try {
+        await navigator.clipboard.writeText(button.dataset.prompt);
+        button.innerHTML = `${ICON_CHECK}<span>Copied</span>`;
+        live(`Copied: ${button.dataset.label || "prompt"}`);
+        setTimeout(() => { button.innerHTML = restore; }, 1200);
+      } catch { window.prompt("Copy prompt:", button.dataset.prompt); }
+    });
+    document.querySelector("#content").addEventListener("toggle", event => {
+      const item = event.target;
+      if (!item.dataset || !item.dataset.key) return;
+      // Parser-set open attributes also fire toggle; never persist those.
+      if (item.dataset.forced) return;
+      if (item.open) state.open.set(item.dataset.key, true);
+      else state.open.delete(item.dataset.key);
+      saveOpen();
+    }, true);
+    document.querySelector("#modal-close").addEventListener("click", () => document.querySelector("#plan-modal").close());
+    document.querySelector("#plan-modal").addEventListener("click", event => { if (event.target === event.currentTarget) event.currentTarget.close(); });
+    startPolling();
+    applyTheme();
+    applyCols();
+  </script>
+</body>
+</html>

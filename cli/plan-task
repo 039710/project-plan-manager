@@ -1,0 +1,17 @@
+#!/usr/bin/env sh
+# ponytail: on this box node's tracing-agent teardown aborts (SIGABRT/134)
+# *after* the work is already written to disk. Normalize that one status so
+# callers (the skill) don't read a false failure, and stop the 37MB core dump
+# landing in the project cwd. Remove all of this when node/libuv stops
+# aborting at exit.
+# ponytail: node stays a child (no exec) so we can read its status, so forward
+# signals explicitly or `dashboard_serve` would orphan the server process.
+ulimit -c 0 2>/dev/null || true
+node "$HOME/.local/lib/opencode/plan-task.js" "$@" &
+child=$!
+trap 'kill -TERM "$child" 2>/dev/null' INT TERM HUP
+wait "$child"
+status=$?
+trap - INT TERM HUP
+[ "$status" -eq 134 ] && exit 0
+exit "$status"

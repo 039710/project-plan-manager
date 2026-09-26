@@ -1,0 +1,199 @@
+# Project Plan Manager
+
+Local package for the `project-plan-manager` agent skill: structured project plans, phased JSON tasks, progress tracking, and a local dashboard.
+
+This directory is the source of truth. `install.sh` distributes it to the skill directories the agent clients read, and to the CLI location the `plan-task` shim calls.
+
+## Origin and attribution
+
+Inspired by [alfahluzi/project-plan-manager](https://github.com/alfahluzi/project-plan-manager), an MIT-licensed project that defines the canonical `project-plan-manager` skill layout: a lowercase hyphenated skill folder with a routing `SKILL.md` and tiered flow prompt files.
+
+This package is a locally maintained variant of that idea, not a fork of the upstream repository and not affiliated with its author. It keeps the same concept (phased JSON plans under `.ppm/`, task status tracking, a local dashboard) but has diverged in CLI name, command surface, and skill file layout; see [Differences from the upstream reference](#differences-from-the-upstream-reference). Credit for the original design belongs upstream. If you redistribute this package, keep this attribution and the upstream MIT notice.
+
+Upstream remains the reference for the fuller feature set: `ppm` CLI, `prompts/*-flow.md` routing, and task dependency handling.
+
+## Layout
+
+```text
+~/.project-plan-manager/
+|-- README.md
+|-- install.sh              # distributes skill/ and cli/ to their runtime paths
+|-- skill/                  # canonical skill payload
+|   |-- SKILL.md
+|   |-- templates/task.html # dashboard (served, never copied into projects)
+|   `-- scripts/smoke-test-task-html.js
+`-- cli/
+    |-- plan-task.js        # CLI implementation -> $HOME/.local/lib/opencode/plan-task.js
+    `-- plan-task           # POSIX sh shim -> $HOME/.local/bin/plan-task
+```
+
+`SKILL.md` is the routing file; it is the only mandatory read for an agent. There are no separate `prompts/` flow files in this package (see [Differences from the upstream reference](#differences-from-the-upstream-reference)).
+
+Two runtime skill copies exist on this machine because two clients read different directories:
+
+| Client | Skill directory | Reads the package |
+| --- | --- | --- |
+| Pi | `~/.pi/agent/skills/project-plan-manager` | via `install.sh --client pi` |
+| OpenCode | `~/.config/opencode/skills/project-plan-manager` | via `install.sh --client opencode` |
+
+The CLI **always** resolves the dashboard template from the OpenCode path:
+
+```js
+path.resolve(__dirname, "../../../.config/opencode/skills/project-plan-manager/templates/task.html")
+```
+
+So `install.sh` installs that target unconditionally, even when you only ask for `--client pi`. Keep both copies identical: run `install.sh` after every edit instead of editing a runtime copy by hand.
+
+## Features
+
+- Create and manage `.ppm/<plan-name>/` project plans.
+- Track ordered phases and task status through a JSON contract.
+- Register project roots in a user-local configuration file.
+- Serve a local dashboard bound to `127.0.0.1`.
+- Migrate legacy `docs/plans/` layouts.
+- Copy-paste prompts per plan, per phase, and per task, plus raw CLI commands, from the dashboard.
+
+## Requirements
+
+- Node.js >= 18 on `PATH`.
+- No npm, no build step, no dependencies. Everything here is plain Node and static HTML.
+- POSIX shell for the installer (Linux/macOS; on Windows use WSL or Git Bash).
+
+## Installation
+
+```sh
+cd ~/.project-plan-manager
+./install.sh --dry-run                 # show every path that would change
+./install.sh                           # copy mode: pi + opencode (+ CLI)
+./install.sh --client claude           # Claude Code skill dir
+./install.sh --client codex            # Codex / ~/.agents skills dir
+./install.sh --client all              # every supported client
+./install.sh --mode link               # symlink skill dirs at skill/ (live development)
+./install.sh --uninstall               # move installed skill dirs aside, remove CLI
+```
+
+Supported `--client` values: `pi`, `opencode`, `claude`, `codex`, `agents`, `all`.
+
+`copy` mode (default) snapshots the package into each skill directory. `link` mode symlinks them back at `skill/`, so an edit takes effect immediately in every client — use it while working on the skill, copy mode for a stable install.
+
+When a destination already exists, the installer moves it to `<destination>.rollback-<timestamp>` instead of deleting it. Nothing is removed silently; delete those rollback directories yourself once the install is verified.
+
+`--uninstall` touches only the skill directories and the CLI. Your plans (`.ppm/`), `config.json`, and project data are left untouched.
+
+### PATH
+
+The shim is installed at `~/.local/bin/plan-task`. If `plan-task` is not found:
+
+```sh
+command -v plan-task
+npm prefix -g          # only relevant if you also install node tools globally
+```
+
+Add `$HOME/.local/bin` to your shell `PATH` yourself after reviewing your shell profile. The installer never edits shell profiles. Restart the terminal and the agent client after changing `PATH`.
+
+### Optional automatic use
+
+To have the skill loaded automatically for planning, execution, and plan audits, add this bounded block to the **user-level** `AGENTS.md` your client reads (not the project one). Edit it only with explicit consent:
+
+```markdown
+<!-- project-plan-manager:start -->
+For planning, executing/resuming plans, or auditing plans before execution, load and use the `project-plan-manager` skill and the `plan-task` CLI.
+<!-- project-plan-manager:end -->
+```
+
+## Usage
+
+Run the CLI from a project root, or pass `--project <path>` to target another project. With no arguments it prints its usage block and exits non-zero.
+
+```sh
+plan-task init [--plan <name>] [--project <path>]
+plan-task plan_init --plan <name> [--project <path>]     # alias for init --plan
+plan-task migrate [--project <path>] [--dry-run]
+plan-task clean_roots [--dry-run]
+plan-task dashboard_serve [--project <path>] [--port <port>]
+
+plan-task task_list --plan <name> --phase <phase_x> [--project <path>]
+plan-task task_get_detail --plan <name> --phase <phase_x> --task-id <id> [--project <path>]
+plan-task task_get_progress --plan <name> --phase <phase_x> --task-id <id> [--project <path>]
+plan-task task_write_progress --plan <name> --phase <phase_x> --task-id <id> --progress-text <text> [--project <path>]
+plan-task task_completed --plan <name> --phase <phase_x> --task-id <id> [--project <path>]
+plan-task task_fail --plan <name> --phase <phase_x> --task-id <id> [--project <path>]
+plan-task task_reset --plan <name> --phase <phase_x> --task-id <id> [--project <path>]
+```
+
+Task status values are `todo`, `completed`, and `fail`. Progress text is free-form and read back with `task_get_progress`. Phases run in numeric order; parallelism inside a phase is a judgment call described in `SKILL.md`, not a CLI flag.
+
+`--dry-run` is supported by `migrate` and `clean_roots` only. Successive runs are safe: `init` re-registers the project root, and `task_*` commands are idempotent for the same target status.
+
+## Dashboard
+
+```sh
+plan-task dashboard_serve [--port 4173]
+```
+
+- Binds to `127.0.0.1` only.
+- Serves `templates/task.html` and polls `.ppm/*/tasks/phase_*.json` every 3 seconds.
+- Shows per-plan phase strips, task status, detail, progress, and copy buttons for execute/audit prompts and `plan-task task_get_detail` commands.
+- Controls: project selector, status filter, task search, refresh, column count (`1`/`2`/`3`), and theme (`auto`/`light`/`dark`). Preferences are stored in the browser, not on disk.
+- There is no authentication. Anyone who can reach the port can read the plan data, so do not bind it to a public interface.
+
+## Data and configuration locations
+
+| What | Where |
+| --- | --- |
+| Project plans and task data | `<project>/.ppm/` |
+| Registered project roots | `~/.config/project-plan-manager/config.json` (`0700` dir, `0600` file) |
+| Dashboard template | `~/.config/opencode/skills/project-plan-manager/templates/task.html` |
+| CLI implementation | `~/.local/lib/opencode/plan-task.js` |
+| CLI shim | `~/.local/bin/plan-task` |
+
+`config.json` holds `{"projects":[{"name","path"}]}`, sorted, and is rewritten atomically with a temporary file plus rename.
+
+## Security and privacy
+
+- The CLI writes project paths and task data locally. Do not publish `config.json`, `.ppm/`, plan content, or task progress.
+- The dashboard is not an authenticated service. Keep it on `127.0.0.1`.
+- Task text is inserted into the dashboard DOM with HTML escaping; plan files are shown as plain text, so `plan.md` content is not executed.
+
+## Development verification
+
+From this directory:
+
+```sh
+sh -n install.sh                                    # installer syntax
+node --check cli/plan-task.js                       # CLI syntax
+node skill/scripts/smoke-test-task-html.js          # dashboard render checks
+plan-task                                           # prints usage, exits non-zero
+cd "$(mktemp -d)" && HOME="$PWD/home" sh ~/.project-plan-manager/install.sh --dry-run
+```
+
+The smoke test extracts the dashboard script, runs it against a stub DOM, and asserts forced-open behaviour, persisted accordion state, copy prompts, phase labels, theme, and column settings. Run it after any edit to `skill/templates/task.html`.
+
+## Differences from the upstream reference
+
+The upstream [alfahluzi/project-plan-manager](https://github.com/alfahluzi/project-plan-manager) ships a different surface. This package is the local, working variant; it does not implement the upstream features below, and its README deliberately does not document them:
+
+| Upstream reference | Here |
+| --- | --- |
+| `ppm` CLI via `npm link` / `install.sh` | `plan-task` shim in `~/.local/bin`; no npm package |
+| `prompts/planning-flow.md`, `execution-flow.md`, `audition-flow.md`, `installation-flow.md` | single `SKILL.md` routing file |
+| `task_ready`, `task_blocked`, `task_get`, `task_in_progress`, `check_dashboard` | not present |
+| `pre_request` dependencies between tasks in a phase | not present; ordering is agent judgment per `SKILL.md` |
+| `in_progress` task status | not present; statuses are `todo`, `completed`, `fail` |
+
+If you prefer the upstream names, symlink them yourself rather than adding aliases here:
+
+```sh
+ln -s ~/.local/bin/plan-task ~/.local/bin/ppm
+```
+
+## Credits
+
+- Original design and reference implementation: [alfahluzi/project-plan-manager](https://github.com/alfahluzi/project-plan-manager) (MIT).
+- Local variant, dashboard template, and installer: maintained in this package.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+Upstream is MIT-licensed by its own author; keep that attribution when you redistribute this package.

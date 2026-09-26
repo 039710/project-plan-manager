@@ -1,0 +1,4 @@
+# Installer rollbacks and local noise
+*.rollback-*/
+.DS_Store
+node_modules/
