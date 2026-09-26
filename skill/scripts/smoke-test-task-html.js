@@ -77,6 +77,31 @@ if (fs.existsSync(examplesDir)) {
   console.log("note: examples/ absent (installed copy) — example checks skipped");
 }
 
+// Pi harness resources. Same skip rule: installed skill copies carry neither
+// examples/ nor pi/.
+const piDir = path.join(__dirname, "..", "..", "pi");
+if (fs.existsSync(piDir)) {
+  const promptDir = path.join(piDir, "prompts");
+  const prompts = fs.existsSync(promptDir) ? fs.readdirSync(promptDir).filter(name => name.endsWith(".md")) : [];
+  checks.push(["pi prompts present", ["plan-new.md", "plan-run.md", "plan-audit.md"].every(name => prompts.includes(name))]);
+  let promptsOk = true;
+  for (const name of prompts) {
+    const body = fs.readFileSync(path.join(promptDir, name), "utf8");
+    const frontmatter = body.match(/^---\n([\s\S]*?)\n---\n/);
+    if (!frontmatter) { promptsOk = false; continue; }
+    if (!/^description: .+/m.test(frontmatter[1])) promptsOk = false;
+    if (!/^argument-hint: .+/m.test(frontmatter[1])) promptsOk = false;
+    if (!body.includes("project-plan-manager")) promptsOk = false;
+    if (!body.includes("plan-task")) promptsOk = false;
+  }
+  checks.push(["pi prompt frontmatter + routing", promptsOk]);
+  const snippetPath = path.join(piDir, "AGENTS.snippet.md");
+  const snippet = fs.existsSync(snippetPath) ? fs.readFileSync(snippetPath, "utf8") : "";
+  checks.push(["AGENTS snippet markers", snippet.includes("<!-- project-plan-manager:start -->") && snippet.includes("<!-- project-plan-manager:end -->")]);
+} else {
+  console.log("note: pi/ absent (installed copy) — pi resource checks skipped");
+}
+
 let failed = 0;
 for (const [name, ok] of checks) { if (!ok) { console.log("FAIL " + name); failed++; } }
 console.log(failed ? `${failed}/${checks.length} FAILED` : `ALL PASS ${checks.length}`);

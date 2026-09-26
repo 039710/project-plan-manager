@@ -115,7 +115,14 @@ function projectRoot(options) {
 }
 
 function templatePath() {
-	return path.resolve(__dirname, "../../../.config/opencode/skills/project-plan-manager/templates/task.html");
+	const candidates = [
+		path.resolve(__dirname, "../../../.config/opencode/skills/project-plan-manager/templates/task.html"),
+		path.resolve(__dirname, "../skill/templates/task.html"),
+		path.resolve(__dirname, "../templates/task.html"),
+	];
+	const found = candidates.find((candidate) => fs.existsSync(candidate));
+	if (!found) throw new Error(`dashboard template not found; looked in:\n  ${candidates.join("\n  ")}`);
+	return found;
 }
 
 function readConfig() {
@@ -287,6 +294,9 @@ function serveDashboard(options) {
 		} catch (error) {
 			return dashboardResponse(response, 500, JSON.stringify({ error: error.message }), "application/json; charset=utf-8");
 		}
+	});
+	server.on("error", (error) => {
+		fail(error.code === "EADDRINUSE" ? `port ${port} is already in use` : error.message);
 	});
 	server.listen(port, "127.0.0.1", () => {
 		process.stdout.write(`Dashboard available at http://127.0.0.1:${port}/task.html\n`);

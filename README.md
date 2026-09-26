@@ -19,11 +19,18 @@ Upstream remains the reference for the fuller feature set: `ppm` CLI, `prompts/*
 ```text
 ~/.project-plan-manager/
 |-- README.md
-|-- install.sh              # distributes skill/ and cli/ to their runtime paths
+|-- install.sh              # distributes skill/, cli/, and pi/ to their runtime paths
 |-- skill/                  # canonical skill payload
 |   |-- SKILL.md
 |   |-- templates/task.html # dashboard (served, never copied into projects)
 |   `-- scripts/smoke-test-task-html.js
+|-- pi/                     # Pi harness extras
+|   |-- prompts/            # slash-command templates -> ~/.pi/agent/prompts/
+|   |   |-- plan-new.md     # /plan-new
+|   |   |-- plan-run.md     # /plan-run
+|   |   `-- plan-audit.md   # /plan-audit
+|   `-- AGENTS.snippet.md   # bounded auto-use block for ~/.pi/agent/AGENTS.md
+|-- examples/demo-plan/     # copyable plan: plan.md + tasks/phase_*.json
 `-- cli/
     |-- plan-task.js        # CLI implementation -> $HOME/.local/lib/opencode/plan-task.js
     `-- plan-task           # POSIX sh shim -> $HOME/.local/bin/plan-task
@@ -38,13 +45,13 @@ Two runtime skill copies exist on this machine because two clients read differen
 | Pi | `~/.pi/agent/skills/project-plan-manager` | via `install.sh --client pi` |
 | OpenCode | `~/.config/opencode/skills/project-plan-manager` | via `install.sh --client opencode` |
 
-The CLI **always** resolves the dashboard template from the OpenCode path:
+The CLI resolves the dashboard template by searching, in order:
 
-```js
-path.resolve(__dirname, "../../../.config/opencode/skills/project-plan-manager/templates/task.html")
-```
+1. `$HOME/.config/opencode/skills/project-plan-manager/templates/task.html` (installed layout)
+2. `<package>/skill/templates/task.html` (running from a clone)
+3. `<package>/templates/task.html` (flattened layout)
 
-So `install.sh` installs that target unconditionally, even when you only ask for `--client pi`. Keep both copies identical: run `install.sh` after every edit instead of editing a runtime copy by hand.
+If none exists, `dashboard_serve` reports every path it tried and exits non-zero instead of starting a server that cannot serve its page. `install.sh` still installs the first path unconditionally, so the dashboard works whichever client you selected. Keep the runtime copies identical by running `install.sh` after every edit rather than editing a runtime copy by hand.
 
 ## Features
 
@@ -54,6 +61,7 @@ So `install.sh` installs that target unconditionally, even when you only ask for
 - Serve a local dashboard bound to `127.0.0.1`.
 - Migrate legacy `docs/plans/` layouts.
 - Copy-paste prompts per plan, per phase, and per task, plus raw CLI commands, from the dashboard.
+- Pi slash commands `/plan-new`, `/plan-run`, and `/plan-audit`.
 
 ## Requirements
 
@@ -72,6 +80,7 @@ cd ~/.project-plan-manager
 ./install.sh --client codex            # Codex / ~/.agents skills dir
 ./install.sh --client all              # every supported client
 ./install.sh --mode link               # symlink skill dirs at skill/ (live development)
+./install.sh --agents-md               # pi only: append the auto-use block to AGENTS.md
 ./install.sh --uninstall               # move installed skill dirs aside, remove CLI
 ```
 
@@ -83,7 +92,7 @@ Supported `--client` values: `pi`, `opencode`, `claude`, `codex`, `agents`, `all
 
 When a destination already exists, the installer moves it to `<destination>.rollback-<timestamp>` instead of deleting it. Nothing is removed silently; delete those rollback directories yourself once the install is verified.
 
-`--uninstall` touches only the skill directories and the CLI. Your plans (`.ppm/`), `config.json`, and project data are left untouched.
+`--uninstall` touches only the skill directories, the Pi prompt templates it installed (identical files only), and the CLI. Your plans (`.ppm/`), `config.json`, project data, and `AGENTS.md` are left untouched.
 
 ### PATH
 
@@ -98,13 +107,33 @@ Add `$HOME/.local/bin` to your shell `PATH` yourself after reviewing your shell 
 
 ### Optional automatic use
 
-To have the skill loaded automatically for planning, execution, and plan audits, add this bounded block to the **user-level** `AGENTS.md` your client reads (not the project one). Edit it only with explicit consent:
+To have the skill loaded automatically for planning, execution, and plan audits, add this bounded block to the **user-level** `AGENTS.md` your client reads (not the project one). Edit it only with explicit consent.
+
+For Pi, `install.sh --agents-md` appends the block to `~/.pi/agent/AGENTS.md` for you: it keeps existing content, skips when the block is already present, and prints a dry-run line under `--dry-run`. Nothing appends it implicitly — the flag is the consent. `--uninstall` deliberately leaves that file alone; remove the block by hand.
+
+The block itself:
 
 ```markdown
 <!-- project-plan-manager:start -->
 For planning, executing/resuming plans, or auditing plans before execution, load and use the `project-plan-manager` skill and the `plan-task` CLI.
 <!-- project-plan-manager:end -->
 ```
+
+## Pi harness
+
+Pi reads the skill from `~/.pi/agent/skills/project-plan-manager` (`--client pi`, included in the default install). Confirm it loaded with `/skill:project-plan-manager`, or force it when the model does not pick the skill up on its own.
+
+The package also ships three prompt templates, installed to `~/.pi/agent/prompts/` when `pi` is among the selected clients. The filename is the command name, so they appear in `/` completion:
+
+| Command | Arguments | Does |
+| --- | --- | --- |
+| `/plan-new` | `<plan-name> [goal]` | Plans with the skill, then writes `.ppm/<plan-name>/` |
+| `/plan-run` | `<plan-name> [phase]` | Executes or resumes a plan through `plan-task` |
+| `/plan-audit` | `<plan-name> [phase]` | Audits the plan against current code, edits nothing |
+
+Run `/reload` in an active Pi session after installing or editing a template. Existing templates with the same name are moved to `<name>.md.rollback-<timestamp>` before being replaced.
+
+Pi also reads the Agent Skills location `~/.agents/skills/`, which is what `--client codex` and `--client agents` install to.
 
 ## Usage
 
@@ -167,6 +196,8 @@ plan-task dashboard_serve [--port 4173]
 | --- | --- |
 | Project plans and task data | `<project>/.ppm/` |
 | Example plan | `<package>/examples/demo-plan/` |
+| Pi prompt templates | `~/.pi/agent/prompts/plan-*.md` |
+| Pi auto-use instructions | `~/.pi/agent/AGENTS.md` (opt-in via `--agents-md`) |
 | Registered project roots | `~/.config/project-plan-manager/config.json` (`0700` dir, `0600` file) |
 | Dashboard template | `~/.config/opencode/skills/project-plan-manager/templates/task.html` |
 | CLI implementation | `~/.local/lib/opencode/plan-task.js` |
@@ -179,6 +210,7 @@ plan-task dashboard_serve [--port 4173]
 - The CLI writes project paths and task data locally. Do not publish `config.json`, `.ppm/`, plan content, or task progress.
 - The dashboard is not an authenticated service. Keep it on `127.0.0.1`.
 - Task text is inserted into the dashboard DOM with HTML escaping; plan files are shown as plain text, so `plan.md` content is not executed.
+- `--agents-md` appends to `~/.pi/agent/AGENTS.md`, which Pi loads as user instructions in every working directory. Only the bounded block is added, existing content is kept, and running it twice does not duplicate the block.
 
 ## Development verification
 
@@ -192,7 +224,16 @@ plan-task                                           # prints usage, exits non-ze
 cd "$(mktemp -d)" && HOME="$PWD/home" sh "$OLDPWD/install.sh" --dry-run
 ```
 
-The smoke test extracts the dashboard script, runs it against a stub DOM, and asserts forced-open behaviour, persisted accordion state, copy prompts, phase labels, theme, and column settings. When run from the package it also validates `examples/demo-plan` against the phase JSON contract. Run it after any edit to `skill/templates/task.html` or the example plan.
+The smoke test extracts the dashboard script, runs it against a stub DOM, and asserts forced-open behaviour, persisted accordion state, copy prompts, phase labels, theme, and column settings. When run from the package it also validates `examples/demo-plan` against the phase JSON contract and the `pi/` prompt templates and AGENTS snippet. Installed copies carry `skill/` only, so those extra checks report as skipped there. Run it after any edit to `skill/templates/task.html`, the example plan, or `pi/`.
+
+The installer is safe to exercise with a throwaway `HOME`, which is how its dry-run, copy, link, and uninstall paths are checked without touching a real installation:
+
+```sh
+T=$(mktemp -d) && mkdir -p "$T/home"
+HOME="$T/home" sh install.sh --client all --mode link --dry-run
+HOME="$T/home" sh install.sh --client pi --agents-md
+HOME="$T/home" sh install.sh --client pi --uninstall
+```
 
 ## Differences from the upstream reference
 
