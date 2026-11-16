@@ -303,6 +303,7 @@
         <option value="zero">0%</option>
         <option value="partial">1-99%</option>
         <option value="complete">100%</option>
+        <option value="archived">Archived</option>
       </select>
       <input id="search" placeholder="Search tasks">
       <button id="refresh">Refresh</button>
@@ -363,6 +364,7 @@
       return `<div class="actions task-actions">${actionButton("Execute Task", exec)}${actionButton("Copy CLI", cli, "copy-prompt cli")}${actionButton("Copy Detail", body)}</div>`;
     };
     const openPlanButton = plan => `<button class="open-plan" data-plan="${esc(plan.name)}">Open Plan</button>`;
+    const archivePlanButton = plan => `<button class="archive-plan" data-plan="${esc(plan.name)}" data-archived="${plan.archived ? "1" : "0"}">${plan.archived ? "Unarchive" : "Archive"}</button>`;
     function applyTheme() {
       const resolved = state.theme === "auto"
         ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
@@ -385,6 +387,8 @@
       if (!project) { document.querySelector("#content").innerHTML = '<p class="empty">No registered projects yet. Run <code>plan-task init</code> inside your project, then reload this page.</p>'; return; }
       const query = state.query.toLowerCase();
       const plans = project.plans.filter(plan => {
+        if (state.filter === "archived") return plan.archived;
+        if (plan.archived) return false;
         if (state.filter === "all") return true;
         return completionClass(stats(plan.phases).percent) === state.filter;
       }).map(plan => {
@@ -408,9 +412,15 @@
           const segTone = hasFail([phase]) ? "fail" : completionClass(st.percent);
           return `<span class="segp ${segTone}" title="${esc(phaseLabel(phase.name))}: ${st.completed} of ${st.total} done"></span>`;
         }).join("");
-        return `<details class="plan ${tone}" data-key="${esc(planKey)}"${forcedAttr(planKey, forcePlan)}${openAttr(planKey, forcePlan)}><summary><span class="plan-title">${esc(plan.name)}</span><span class="plan-count"><b>${planStats.completed}</b> of ${planStats.total} done, ${planStats.percent}%</span><span class="phase-strip" aria-hidden="true">${strip}</span></summary><div class="plan-body"><div class="actions">${actionButton("Execute Plan", executePlan)}${actionButton("Audit Plan", auditPlan)}${openPlanButton(plan)}</div><div class="phases">${phases || '<span class="muted">No phases in this plan yet.</span>'}</div></div></details>`;
+        return `<details class="plan ${tone}" data-key="${esc(planKey)}"${forcedAttr(planKey, forcePlan)}${openAttr(planKey, forcePlan)}><summary><span class="plan-title">${esc(plan.name)}</span>${plan.archived ? '<span class="muted">archived</span>' : ""}<span class="plan-count"><b>${planStats.completed}</b> of ${planStats.total} done, ${planStats.percent}%</span><span class="phase-strip" aria-hidden="true">${strip}</span></summary><div class="plan-body"><div class="actions">${actionButton("Execute Plan", executePlan)}${actionButton("Audit Plan", auditPlan)}${openPlanButton(plan)}${archivePlanButton(plan)}</div><div class="phases">${phases || '<span class="muted">No phases in this plan yet.</span>'}</div></div></details>`;
       }).join("");
-      document.querySelector("#content").innerHTML = plans || '<p class="empty">No plans match. Clear the search or filter to see all plans.</p>';
+      document.querySelector("#content").innerHTML = plans || (state.filter === "archived" ? '<p class="empty">No archived plans. Archive one with <code>plan-task archive --plan &lt;name&gt;</code>.</p>' : '<p class="empty">No plans match. Clear the search or filter to see all plans.</p>');
+    }
+    async function setArchived(project, plan, archived) {
+      const response = await fetch("/api/archive", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ project, plan, archived }) });
+      if (!response.ok) throw new Error((await response.text()) || "archive failed");
+      lastPayload = "";
+      await load();
     }
     let lastPayload = "";
     async function load() {
@@ -440,6 +450,21 @@
     });
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (state.theme === "auto") applyTheme(); });
     document.querySelector("#content").addEventListener("click", async event => {
+      const archiveButton = event.target.closest(".archive-plan");
+      if (archiveButton) {
+        const planName = archiveButton.dataset.plan;
+        const archived = archiveButton.dataset.archived === "1";
+        if (!confirm(`${archived ? "Unarchive" : "Archive"} plan ${planName}?`)) return;
+        archiveButton.disabled = true;
+        try {
+          await setArchived(state.project, planName, !archived);
+          live(`${archived ? "Unarchived" : "Archived"}: ${planName}`);
+        } catch (error) {
+          archiveButton.disabled = false;
+          live(`Archive failed: ${error.message}`);
+        }
+        return;
+      }
       const openButton = event.target.closest(".open-plan");
       if (openButton) {
         const project = state.data.projects.find(item => item.id === state.project);

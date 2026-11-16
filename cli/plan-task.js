@@ -14,6 +14,8 @@ const OPERATIONS = new Set([
 	"migrate",
 	"clean_roots",
 	"dashboard_serve",
+	"archive",
+	"unarchive",
 	"task_list",
 	"task_get_progress",
 	"task_get_detail",
@@ -22,7 +24,9 @@ const OPERATIONS = new Set([
 	"task_reset",
 	"task_write_progress",
 ]);
+const PLAN_ONLY_OPERATIONS = new Set(["archive", "unarchive"]);
 const VALID_STATUSES = new Set(["todo", "completed", "fail"]);
+const ARCHIVE_MARKER = ".archived";
 const PLAN_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const CONFIG_DIR = path.join(os.homedir(), ".config", "project-plan-manager");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
@@ -35,6 +39,8 @@ function usage() {
 		"  plan-task migrate [--project <path>] [--dry-run]",
 		"  plan-task clean_roots [--dry-run]",
 		"  plan-task dashboard_serve [--project <path>] [--port <port>]",
+		"  plan-task archive --plan <name> [--project <path>]",
+		"  plan-task unarchive --plan <name> [--project <path>]",
 		"  plan-task task_list --plan <name> --phase <phase_x> [--project <path>]",
 		"  plan-task task_get_progress --plan <name> --phase <phase_x> --task-id <id> [--project <path>]",
 		"  plan-task task_get_detail --plan <name> --phase <phase_x> --task-id <id> [--project <path>]",
@@ -77,10 +83,10 @@ function parseArgs(argv) {
 	if (operation === "plan_init" && !options.plan) throw new Error(`missing --plan\n${usage()}`);
 	if (!["init", "plan_init", "migrate", "clean_roots", "dashboard_serve"].includes(operation)) {
 		for (const required of ["plan", "phase"]) {
-			if (!options[required]) throw new Error(`missing --${required}\n${usage()}`);
+			if (!options[required] && !(required === "phase" && PLAN_ONLY_OPERATIONS.has(operation))) throw new Error(`missing --${required}\n${usage()}`);
 		}
 	}
-	if (!["task_list", "init", "plan_init", "migrate", "clean_roots", "dashboard_serve"].includes(operation) && !options["task-id"]) {
+	if (!["task_list", "init", "plan_init", "migrate", "clean_roots", "dashboard_serve", "archive", "unarchive"].includes(operation) && !options["task-id"]) {
 		throw new Error(`missing --task-id\n${usage()}`);
 	}
 	if (operation === "task_write_progress" && !options["progress-text"]?.trim()) {
@@ -232,6 +238,30 @@ function resolveTaskFile(options) {
 	return taskFile;
 }
 
+function resolvePlanDir(options) {
+	assertSafeSegment(options.plan, "plan name", PLAN_PATTERN);
+	const root = projectRoot(options);
+	const planDir = path.resolve(root, ".ppm", options.plan);
+	const allowedRoot = `${path.resolve(root, ".ppm")}${path.sep}`;
+	if (!planDir.startsWith(allowedRoot)) throw new Error("resolved plan directory is outside the project .ppm directory");
+	let stat;
+	try { stat = fs.statSync(planDir); } catch { throw new Error(`plan not found: ${options.plan}`); }
+	if (!stat.isDirectory()) throw new Error(`plan not found: ${options.plan}`);
+	return planDir;
+}
+
+function setArchived(options, archived) {
+	applyArchive(options, archived);
+	process.stdout.write(archived ? `Plan archived: ${options.plan}\n` : `Plan unarchived: ${options.plan}\n`);
+}
+
+function applyArchive(options, archived) {
+	const planDir = resolvePlanDir(options);
+	const marker = path.join(planDir, ARCHIVE_MARKER);
+	if (archived) fs.writeFileSync(marker, `${new Date().toISOString()}\n`, { mode: 0o600 });
+	else if (fs.existsSync(marker)) fs.unlinkSync(marker);
+}
+
 function phaseNumber(name) {
 	const match = /^phase_(\d+)$/.exec(name);
 	return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
@@ -258,7 +288,8 @@ function readProjectData(project) {
 					const phase = readPhase(filePath, name);
 					return { name, title: phase.title || name, filePath, tasks: phase.tasks };
 				});
-			return { name: entry.name, content, phases };
+			const archived = fs.existsSync(path.join(planRoot, ARCHIVE_MARKER));
+			return { name: entry.name, content, phases, archived };
 		})
 		.sort((a, b) => a.name.localeCompare(b.name));
 	return { id: project.path, name: project.name, path: project.path, plans };
@@ -281,13 +312,53 @@ function dashboardResponse(response, status, body, contentType) {
 	response.end(body);
 }
 
+function archiveFromDashboard(body, options) {
+	if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("request body must be an object");
+	if (typeof body.plan !== "string" || !body.plan.trim()) throw new Error("plan must be a non-empty string");
+	if (typeof body.archived !== "boolean") throw new Error("archived must be a boolean");
+	const allowed = dashboardProjects(options);
+	let project;
+	if (body.project === undefined) {
+		if (allowed.length !== 1) throw new Error("project is required when several projects are registered");
+		project = allowed[0];
+	} else {
+		const requested = path.resolve(String(body.project));
+		project = allowed.find((entry) => path.resolve(entry.path) === requested);
+	}
+	if (!project) throw new Error("project is not a registered dashboard root");
+	applyArchive({ plan: body.plan, project: project.path }, body.archived);
+	process.stdout.write(`${body.archived ? "Archived" : "Unarchived"} ${body.plan} (${project.name}) via dashboard\n`);
+}
+
+function readJsonBody(request) {
+	return new Promise((resolve, reject) => {
+		const chunks = [];
+		let size = 0;
+		request.on("data", (chunk) => {
+			size += chunk.length;
+			if (size > 4096) { reject(new Error("request body too large")); request.destroy(); return; }
+			chunks.push(chunk);
+		});
+		request.on("end", () => {
+			try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}")); }
+			catch { reject(new Error("invalid JSON body")); }
+		});
+		request.on("error", reject);
+	});
+}
+
 function serveDashboard(options) {
 	const htmlPath = templatePath();
 	const port = options.port === undefined ? 4173 : Number(options.port);
-	const server = http.createServer((request, response) => {
-		if (request.method !== "GET") return dashboardResponse(response, 405, JSON.stringify({ error: "Method not allowed" }), "application/json; charset=utf-8");
+	const server = http.createServer(async (request, response) => {
 		const route = new URL(request.url, "http://127.0.0.1").pathname;
 		try {
+			if (request.method === "POST" && route === "/api/archive") {
+				const body = await readJsonBody(request);
+				archiveFromDashboard(body, options);
+				return dashboardResponse(response, 200, JSON.stringify({ ok: true }), "application/json; charset=utf-8");
+			}
+			if (request.method !== "GET") return dashboardResponse(response, 405, JSON.stringify({ error: "Method not allowed" }), "application/json; charset=utf-8");
 			if (route === "/api/tasks") return dashboardResponse(response, 200, JSON.stringify(readDashboardData(options)), "application/json; charset=utf-8");
 			if (route === "/" || route === "/task.html") return dashboardResponse(response, 200, fs.readFileSync(htmlPath), "text/html; charset=utf-8");
 			return dashboardResponse(response, 404, JSON.stringify({ error: "Not found" }), "application/json; charset=utf-8");
@@ -366,6 +437,8 @@ function run(argv) {
 	if (operation === "migrate") return migrateLegacy(options);
 	if (operation === "clean_roots") return cleanRoots(options);
 	if (operation === "dashboard_serve") return serveDashboard(options);
+	if (operation === "archive") return setArchived(options, true);
+	if (operation === "unarchive") return setArchived(options, false);
 	const taskFile = resolveTaskFile(options);
 	const phase = readPhase(taskFile, options.phase);
 	if (operation === "task_list") {

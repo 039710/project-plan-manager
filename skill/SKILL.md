@@ -166,6 +166,8 @@ plan-task init --plan <plan-name> [--project <project-path>]
 plan-task migrate [--project <project-path>] [--dry-run]
 plan-task clean_roots [--dry-run]
 plan-task dashboard_serve [--project <project-path>] [--port 4173]
+plan-task archive --plan <plan-name> [--project <project-path>]
+plan-task unarchive --plan <plan-name> [--project <project-path>]
 plan-task task_list --plan <plan-name> --phase phase_0
 plan-task task_get_progress --plan <plan-name> --phase phase_0 --task-id TASK-001
 plan-task task_get_detail --plan <plan-name> --phase phase_0 --task-id TASK-001
@@ -176,6 +178,14 @@ plan-task task_write_progress --plan <plan-name> --phase phase_0 --task-id TASK-
 ```
 
 `dashboard_serve` binds only to `127.0.0.1` and serves the global live dashboard at `http://127.0.0.1:4173/task.html` (or the selected port). Without `--project`, it loads registered roots from the global config and provides a project dropdown. It polls fresh `.ppm/*/tasks/phase_*.json` data every 3 seconds. Absolute JSON paths remain server-generated runtime metadata; they are not persisted in config.
+
+## Archive
+
+Finished plans can be archived instead of deleted. `plan-task archive --plan <plan-name>` writes a `.archived` marker file (ISO timestamp) inside `.ppm/<plan-name>/`; `plan-task unarchive --plan <plan-name>` removes it. Nothing else in the plan is touched, and adding or removing the marker by hand is equivalent.
+
+Archived plans are hidden from the dashboard's normal list and appear only when the header filter is set to `Archived`. Each plan card also has an `Archive` / `Unarchive` button (with a confirm dialog) that posts to the dashboard's `POST /api/archive` endpoint with `{ project?, plan, archived }`. The server accepts only registered dashboard roots, validates the plan name, rejects bodies over 4 KB, and stays bound to `127.0.0.1`; every other route is GET-only.
+
+`.ppm` is usually gitignored inside projects, so the marker is local to the machine unless the project tracks its plan directory.
 
 ## Legacy Migration
 
@@ -190,6 +200,7 @@ Command results:
 - `task_get_detail`: Markdown sections for `Title`, `Status`, and `Detail`.
 - `task_completed`, `task_fail`, and `task_reset`: plain text `Task status updated`.
 - `task_write_progress`: plain text `progress updated`.
+- `archive`, `unarchive`: plain text `Plan archived: <name>` / `Plan unarchived: <name>`.
 
 ## Completion Check
 

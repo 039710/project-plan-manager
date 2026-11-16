@@ -102,6 +102,21 @@ if (fs.existsSync(piDir)) {
   console.log("note: pi/ absent (installed copy) — pi resource checks skipped");
 }
 
+// Archive marker rendering: hidden from the default list, visible under the
+// Archived filter with an Unarchive button, and every plan card carries one.
+api.state.data.projects[0].plans.push({ name:"beta", content:"# beta", archived:true, phases:[{ name:"phase_0", title:"P0", tasks:[{ id:"B-1", title:"archived task", detail:"x", status:"todo", progress:"" }] }] });
+api.state.query = ""; api.state.filter = "all";
+api.render();
+const allOut = document.querySelector("#content").innerHTML;
+checks.push(["archived hidden from all", allOut.includes("alpha") && !allOut.includes("beta")]);
+api.state.filter = "archived";
+api.render();
+const archOut = document.querySelector("#content").innerHTML;
+checks.push(["archived filter shows only archived", archOut.includes("beta") && !archOut.includes("alpha")]);
+checks.push(["archived badge", archOut.includes('<span class="muted">archived</span>')]);
+checks.push(["archive button on active plan", allOut.includes('class="archive-plan" data-plan="alpha" data-archived="0">Archive<')]);
+checks.push(["unarchive button on archived plan", archOut.includes('class="archive-plan" data-plan="beta" data-archived="1">Unarchive<')]);
+
 let failed = 0;
 for (const [name, ok] of checks) { if (!ok) { console.log("FAIL " + name); failed++; } }
 console.log(failed ? `${failed}/${checks.length} FAILED` : `ALL PASS ${checks.length}`);

@@ -146,6 +146,8 @@ plan-task plan_init --plan <name> [--project <path>]     # alias for init --plan
 plan-task migrate [--project <path>] [--dry-run]
 plan-task clean_roots [--dry-run]
 plan-task dashboard_serve [--project <path>] [--port <port>]
+plan-task archive --plan <name> [--project <path>]
+plan-task unarchive --plan <name> [--project <path>]
 
 plan-task task_list --plan <name> --phase <phase_x> [--project <path>]
 plan-task task_get_detail --plan <name> --phase <phase_x> --task-id <id> [--project <path>]
@@ -157,6 +159,8 @@ plan-task task_reset --plan <name> --phase <phase_x> --task-id <id> [--project <
 ```
 
 Task status values are `todo`, `completed`, and `fail`. Progress text is free-form and read back with `task_get_progress`. Phases run in numeric order; parallelism inside a phase is a judgment call described in `SKILL.md`, not a CLI flag.
+
+`plan-task archive` writes a `.archived` marker inside `.ppm/<plan>/` so a finished plan leaves the dashboard list without being deleted; `unarchive` removes the marker. The dashboard hides archived plans from the normal list, shows them under the `Archived` filter, and exposes the same operation through the `Archive` / `Unarchive` button on each card (`POST /api/archive`, loopback only).
 
 `--dry-run` is supported by `migrate` and `clean_roots` only. Successive runs are safe: `init` re-registers the project root, and `task_*` commands are idempotent for the same target status.
 
